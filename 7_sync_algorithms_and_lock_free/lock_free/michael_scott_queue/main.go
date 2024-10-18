@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 )
 
 type item struct {
-	value string
+	value int
 	next  unsafe.Pointer
 }
 
@@ -24,7 +25,7 @@ func New() *Queue {
 	}
 }
 
-func (q *Queue) Push(value string) {
+func (q *Queue) Push(value int) {
 	// Создание нового узла
 	node := &item{value: value}
 
@@ -51,7 +52,7 @@ func (q *Queue) Push(value string) {
 	}
 }
 
-func (q *Queue) Pop() string {
+func (q *Queue) Pop() int {
 	for {
 		// Загружаем указатели head, tail и next
 		head := atomic.LoadPointer(&q.head)
@@ -66,28 +67,49 @@ func (q *Queue) Pop() string {
 			if atomic.CompareAndSwapPointer(&q.head, head, next) {
 				return value
 			}
-		} else {
-			// если голова и хвост — это какой-то узел
-			if next == nil {
-				// очередь содержит только фиктивный узел
-				return ""
-			}
-			// иначе хвост надо зафиксировать
-			atomic.CompareAndSwapPointer(&q.tail, tail, next)
 		}
+
+		// очередь содержит только фиктивный узел
+		if next == nil {
+			return -1
+		}
+		// иначе хвост надо зафиксировать
+		atomic.CompareAndSwapPointer(&q.tail, tail, next)
+	}
+}
+
+func (q *Queue) Print() {
+	current := atomic.LoadPointer(&q.head)
+
+	for {
+		next := atomic.LoadPointer(&(*item)(current).next)
+		if next == nil {
+			break
+		}
+		fmt.Printf("%d ", (*item)(next).value)
+		current = next
 	}
 }
 
 func main() {
 	queue := New()
+	wg := sync.WaitGroup{}
+	wg.Add(20)
 
-	queue.Push("A")
-	queue.Push("B")
-	queue.Push("C")
+	// Заполнение очереди
+	for i := 0; i < 20; i++ {
+		go func(i int) {
+			defer wg.Done()
+			queue.Push(i)
+		}(i)
+	}
 
-	fmt.Println(queue.Pop())
-	fmt.Println(queue.Pop())
-	fmt.Println(queue.Pop())
-	fmt.Println(queue.Pop())
-	fmt.Println(queue.Pop())
+	wg.Wait()
+
+	queue.Print()
+
+	fmt.Println()
+	for i := 0; i < 20; i++ {
+		fmt.Printf("%d ", queue.Pop())
+	}
 }
